@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Добавление UPC | Zvonkodigital</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Плейлист-чекер</h1>
+      <nav>
+        <a href="./index.html" class="active">Добавить UPC</a>
+        <a href="./releases.html">Релизы</a>
+      </nav>
+    </header>
+
+    <div class="container">
+      <div class="card" id="tokenCard">
+        <h2>Токен авторизации</h2>
+        <p class="muted">Сохраните access_token / refresh_token, чтобы браузер сам обновлял сессию.</p>
+        <div class="token-grid">
+          <label>
+            Access token
+            <input id="accessInput" type="text" placeholder="Bearer…" />
+          </label>
+          <label>
+            Refresh token
+            <input id="refreshInput" type="text" placeholder="Refresh…" />
+          </label>
+          <label>
+            Срок жизни (сек)
+            <input id="expiresInput" type="number" min="60" step="60" value="300" />
+          </label>
+        </div>
+        <div class="token-actions">
+          <button id="saveTokenBtn">Сохранить токены</button>
+          <button id="clearTokenBtn" class="ghost">Сбросить</button>
+          <span id="tokenStatus" class="muted"></span>
+        </div>
+      </div>
+
+      <div style="height: 20px"></div>
+
+      <div class="card">
+        <h2>Добавьте UPC коды</h2>
+        <p class="muted">Коды можно вводить через пробел или с новой строки. Проверка стартует сразу.</p>
+        <div class="input-area">
+          <textarea id="upcInput" placeholder="Например: 5063857155342 5063857157063"></textarea>
+        </div>
+        <div class="actions-row">
+          <button id="submitBtn">Добавить и проверить</button>
+          <button id="resetBtn" class="ghost">Очистить очередь/результаты</button>
+          <span id="status" class="muted"></span>
+        </div>
+      </div>
+
+      <div style="height: 24px"></div>
+
+      <div class="grid" id="results"></div>
+    </div>
+
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

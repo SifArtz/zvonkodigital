@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Релизы в плейлистах | Zvonkodigital</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Плейлист-чекер</h1>
+      <nav>
+        <a href="./index.html">Добавить UPC</a>
+        <a href="./releases.html" class="active">Релизы</a>
+      </nav>
+    </header>
+
+    <div class="container">
+      <div class="card">
+        <h2>Попадания в плейлисты</h2>
+        <p class="muted">Группировка по неделям выхода релиза с разбивкой по месяцам.</p>
+        <div id="monthTabs" class="tabs"></div>
+        <div id="weeks"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./releases.js"></script>
+  </body>
+</html>

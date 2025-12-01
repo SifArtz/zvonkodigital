@@ -1,0 +1,8 @@
+# Editor and OS junk
+.DS_Store
+*.swp
+*.swo
+
+# Build artifacts
+node_modules/
+dist/
