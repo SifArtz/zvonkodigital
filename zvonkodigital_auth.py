@@ -17,6 +17,7 @@ import argparse
 import base64
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -27,6 +28,8 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 CLIENT_ID = "75mwixlHmTIbzvREyUQt3Sk29lwpQfIw9bU948wJ"
 AUTH_BASE = "https://auth.zvonkodigital.ru"
@@ -42,6 +45,7 @@ CODE_VERIFIER_CHARSET = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjkl
 def generate_code_verifier(length: int = 64) -> str:
     """Generate a random PKCE code verifier."""
 
+    logger.debug("Generating code verifier of length %s", length)
     return "".join(secrets.choice(CODE_VERIFIER_CHARSET) for _ in range(length))
 
 
@@ -65,7 +69,9 @@ def build_authorize_url(code_challenge: str) -> str:
             "code_challenge": code_challenge,
         }
     )
-    return f"{AUTH_BASE}{AUTH_PATH}?{params}"
+    authorize_url = f"{AUTH_BASE}{AUTH_PATH}?{params}"
+    logger.debug("Authorize URL built: %s", authorize_url)
+    return authorize_url
 
 
 def extract_csrf_token(html: str) -> Optional[str]:
@@ -79,6 +85,7 @@ def extract_csrf_token(html: str) -> Optional[str]:
 def perform_login(session: requests.Session, auth_url: str, username: str, password: str) -> requests.Response:
     """Submit the login form and return the final response after redirects."""
 
+    logger.info("Fetching login page for user %s", username)
     login_page = session.get(auth_url)
     csrf_token = extract_csrf_token(login_page.text)
     if not csrf_token:
@@ -90,6 +97,7 @@ def perform_login(session: requests.Session, auth_url: str, username: str, passw
         raise RuntimeError("Unable to locate login form")
 
     action_url = urljoin(AUTH_BASE, form["action"])
+    logger.debug("Submitting credentials to %s", action_url)
     next_value = form.find("input", {"name": "next"})
     payload = {
         "csrfmiddlewaretoken": csrf_token,
@@ -117,6 +125,7 @@ def extract_authorization_code(final_response: requests.Response) -> str:
 def exchange_code_for_tokens(session: requests.Session, code: str, code_verifier: str) -> Dict:
     """Exchange an authorization code for OAuth tokens."""
 
+    logger.info("Exchanging authorization code for tokens")
     data = {
         "client_id": CLIENT_ID,
         "code_verifier": code_verifier,
@@ -133,6 +142,7 @@ def exchange_code_for_tokens(session: requests.Session, code: str, code_verifier
 def authenticate(username: str, password: str) -> Dict:
     """Perform the full OAuth login flow and return token JSON."""
 
+    logger.info("Starting authentication for user %s", username)
     session = requests.Session()
     code_verifier = generate_code_verifier()
     code_challenge = create_code_challenge(code_verifier)
@@ -164,13 +174,18 @@ class TokenManager:
 
     def load_tokens(self) -> Optional[Dict]:
         if not self.cache_path.exists():
+            logger.info("Token cache not found at %s", self.cache_path)
             return None
         try:
-            return json.loads(self.cache_path.read_text(encoding="utf-8"))
+            cached = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            logger.info("Loaded cached tokens from %s", self.cache_path)
+            return cached
         except json.JSONDecodeError:
+            logger.warning("Token cache at %s is corrupted; ignoring", self.cache_path)
             return None
 
     def save_tokens(self, tokens: Dict) -> None:
+        logger.info("Saving tokens to %s", self.cache_path)
         self.cache_path.write_text(json.dumps(tokens, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _is_access_token_valid(self, tokens: Dict) -> bool:
@@ -180,6 +195,7 @@ class TokenManager:
         return time.time() + 60 < expires_at  # refresh 1 minute early
 
     def _refresh_tokens(self, refresh_token: str) -> Optional[Dict]:
+        logger.info("Attempting token refresh")
         data = {
             "client_id": CLIENT_ID,
             "grant_type": "refresh_token",
@@ -189,9 +205,11 @@ class TokenManager:
         session = requests.Session()
         response = session.post(token_url, data=data)
         if response.status_code != 200:
+            logger.warning("Token refresh failed with status %s", response.status_code)
             return None
         refreshed = response.json()
         refreshed["expires_at"] = time.time() + refreshed.get("expires_in", 0)
+        logger.info("Token refresh succeeded; new expiry in %s seconds", refreshed.get("expires_in"))
         return refreshed
 
     def _login_and_cache(self) -> Dict:
@@ -205,19 +223,26 @@ class TokenManager:
 
         cached = self.load_tokens()
         if cached and self._is_access_token_valid(cached):
+            logger.debug("Using cached access token")
             return cached["access_token"]
 
         if cached and cached.get("refresh_token"):
             refreshed = self._refresh_tokens(cached["refresh_token"])
             if refreshed:
                 self.save_tokens(refreshed)
+                logger.debug("Returning refreshed access token")
                 return refreshed["access_token"]
 
+        logger.info("No valid token available; performing full login")
         tokens = self._login_and_cache()
         return tokens["access_token"]
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Authenticate against account.zvonkodigital.com")
     parser.add_argument("--username", required=True, help="Account username")
     parser.add_argument("--password", required=True, help="Account password")

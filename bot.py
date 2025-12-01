@@ -25,7 +25,10 @@ from aiogram.utils import executor
 
 from zvonkodigital_auth import TokenManager
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 PLAYLIST_PLATFORMS = {
@@ -58,10 +61,17 @@ class BotService:
         )
 
     def lookup_upc(self, upc: str) -> str:
+        logger.info("Processing UPC %s", upc)
         headers = self._build_headers()
 
         album_response = requests.get(ALBUM_ENDPOINT, params={"search": upc}, headers=headers, timeout=20)
         if album_response.status_code != 200:
+            logger.error(
+                "Album request failed for %s with status %s: %s",
+                upc,
+                album_response.status_code,
+                album_response.text,
+            )
             return f"{upc}: ошибка при получении данных альбома"
 
         album_data = album_response.json()
@@ -72,6 +82,8 @@ class BotService:
         album = albums[0]
         artist_name = album.get("artist_name") or "Неизвестный исполнитель"
         release_title = self._extract_release_title(album)
+
+        logger.info("Found album for %s: %s — %s", upc, artist_name, release_title)
 
         playlist_date = dt.date.today().isoformat()
         playlist_lines: List[str] = []
@@ -84,6 +96,7 @@ class BotService:
                 "offset": 0,
                 "q": artist_name,
             }
+            logger.debug("Requesting playlists on %s for %s", platform_key, artist_name)
             response = requests.get(PLAYLIST_ENDPOINT, params=params, headers=headers, timeout=20)
             if response.status_code != 200:
                 logger.warning("Playlist request failed for %s: %s", platform_key, response.status_code)
@@ -91,6 +104,7 @@ class BotService:
 
             payload = response.json()
             results = payload.get("results", [])
+            logger.info("%s playlists found for %s on %s", len(results), artist_name, platform_key)
             for result in results:
                 playlist_name = result.get("playlist_name")
                 if not playlist_name:
@@ -98,6 +112,7 @@ class BotService:
                 playlist_lines.append(f"«{playlist_name}» ({platform_label})")
 
         if not playlist_lines:
+            logger.info("No playlists found for %s", artist_name)
             playlist_lines.append("Плейлисты не найдены")
 
         header = f"{artist_name} - {release_title}"
