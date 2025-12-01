@@ -1,18 +1,20 @@
 # zvonkodigital
 
-Этот репозиторий содержит вспомогательный Python-скрипт для выполнения PKCE OAuth-авторизации на `https://account.zvonkodigital.com`.
+Этот репозиторий содержит инструменты для работы с API `zvonkodigital`, включая:
+- PKCE OAuth-скрипт с кешированием и обновлением токенов;
+- Telegram-бота на `aiogram 2.5`, который ищет релизы по UPC и проверяет наличие треков в плейлистах на нескольких площадках.
 
 ## Требования
 - Python 3.11+
-- Установленные пакеты: `requests`, `beautifulsoup4`
+- Установленные пакеты: `requests`, `beautifulsoup4`, `aiogram==2.5`
 
 Установите зависимости:
 
 ```bash
-pip install requests beautifulsoup4
+pip install requests beautifulsoup4 aiogram==2.5
 ```
 
-## Использование
+## PKCE-скрипт (одноразовый запуск)
 Запустите скрипт, передав логин и пароль:
 
 ```bash
@@ -23,6 +25,33 @@ python zvonkodigital_auth.py --username YOUR_LOGIN --password YOUR_PASSWORD
 1. Генерирует `code_verifier` и `code_challenge` для PKCE.
 2. Загружает страницу логина, извлекает CSRF-токен и отправляет форму.
 3. Извлекает `authorization_code` из редиректа.
-4. Обменивает код на `access_token` и `refresh_token`, выводя ответ в формате JSON.
+4. Обменивает код на `access_token` и `refresh_token`, выводя ответ в формате JSON и записывая кеш (по умолчанию `token_cache.json`).
 
 При неверных учётных данных скрипт вернёт сообщение об ошибке в stderr и завершится с кодом 1.
+
+## Telegram-бот
+Бот ищет релиз по UPC и проверяет наличие треков в плейлистах на площадках ВК, Яндекс Музыка, МТС Музыка и Звук за текущий день.
+
+Переменные окружения:
+- `BOT_TOKEN` — токен бота (обязательно)
+- `ACCOUNT_USERNAME` и `ACCOUNT_PASSWORD` — учётные данные для OAuth (обязательно)
+- `TOKEN_CACHE` — путь для сохранения токенов (опционально, по умолчанию `token_cache.json`)
+
+Запуск:
+
+```bash
+export BOT_TOKEN=...
+export ACCOUNT_USERNAME=...
+export ACCOUNT_PASSWORD=...
+python bot.py
+```
+
+Отправьте боту один или несколько UPC кодов через пробел или новую строку. В ответе вы получите:
+
+```
+Имя исполнителя - Название релиза
+«Название плейлиста» (Название площадки)
+...
+```
+
+При отсутствии совпадений бот вернёт сообщение «Плейлисты не найдены».
