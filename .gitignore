@@ -1,4 +1,8 @@
-__pycache__/
-*.pyc
-token_cache.json
-upc_checks.db
+# Editor and OS junk
+.DS_Store
+*.swp
+*.swo
+
+# Build artifacts
+node_modules/
+dist/

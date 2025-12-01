@@ -1,8 +1,10 @@
+import { allHits } from './app.js';
+
 const monthTabs = document.getElementById('monthTabs');
 const weeksContainer = document.getElementById('weeks');
 
 function monthLabel(dateStr) {
-  const date = new Date(dateStr + 'T00:00:00Z');
+  const date = new Date(`${dateStr}T00:00:00Z`);
   return date.toLocaleString('ru-RU', { month: 'long', year: 'numeric' });
 }
 
@@ -72,13 +74,10 @@ function setActiveMonth(monthLabel, grouped) {
   });
 }
 
-async function loadHits() {
+function loadHits() {
   weeksContainer.innerHTML = '<div class="muted">Загружаем…</div>';
   try {
-    const response = await fetch('/api/hits');
-    if (!response.ok) throw new Error('Network error');
-    const data = await response.json();
-    const hits = data.hits || [];
+    const hits = allHits();
     if (!hits.length) {
       weeksContainer.innerHTML = '<div class="empty-state">Пока нет попаданий в плейлисты</div>';
       return;
