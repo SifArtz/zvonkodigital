@@ -23,6 +23,7 @@ from pathlib import Path
 import secrets
 import sys
 import time
+from threading import Lock
 from typing import Dict, Optional
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
@@ -171,6 +172,9 @@ class TokenManager:
         self.username = username
         self.password = password
         self.cache_path = Path(cache_path)
+        self._tokens: Optional[Dict] = None
+        self._loaded = False
+        self._lock = Lock()
 
     def load_tokens(self) -> Optional[Dict]:
         if not self.cache_path.exists():
@@ -221,21 +225,31 @@ class TokenManager:
     def get_access_token(self) -> str:
         """Return a valid access token, refreshing or logging in as needed."""
 
-        cached = self.load_tokens()
-        if cached and self._is_access_token_valid(cached):
-            logger.debug("Using cached access token")
-            return cached["access_token"]
+        with self._lock:
+            if not self._loaded:
+                self._tokens = self.load_tokens()
+                self._loaded = True
 
-        if cached and cached.get("refresh_token"):
-            refreshed = self._refresh_tokens(cached["refresh_token"])
-            if refreshed:
-                self.save_tokens(refreshed)
-                logger.debug("Returning refreshed access token")
-                return refreshed["access_token"]
+            tokens = self._tokens
 
-        logger.info("No valid token available; performing full login")
-        tokens = self._login_and_cache()
-        return tokens["access_token"]
+            if tokens and self._is_access_token_valid(tokens):
+                logger.debug("Using cached access token")
+                return tokens["access_token"]
+
+            if tokens and tokens.get("refresh_token"):
+                refreshed = self._refresh_tokens(tokens["refresh_token"])
+                if refreshed:
+                    if "refresh_token" not in refreshed and tokens.get("refresh_token"):
+                        refreshed["refresh_token"] = tokens["refresh_token"]
+                    self._tokens = refreshed
+                    self.save_tokens(refreshed)
+                    logger.debug("Returning refreshed access token")
+                    return refreshed["access_token"]
+
+            logger.info("No valid token available; performing full login")
+            tokens = self._login_and_cache()
+            self._tokens = tokens
+            return tokens["access_token"]
 
 
 def main(argv: Optional[list[str]] = None) -> int:

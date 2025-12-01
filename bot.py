@@ -166,7 +166,7 @@ class BotService:
 
         if not playlist_lines:
             logger.info("No playlists found for %s", artist_name)
-            playlist_lines.append("Плейлисты не найдены")
+            return ""
 
         header = f"{artist_name} - {release_title}"
         return "\n".join([header, *playlist_lines])
@@ -179,8 +179,13 @@ class BotService:
 
         await self.bot.send_chat_action(message.chat.id, types.ChatActions.TYPING)
         parts = await asyncio.gather(*(self.lookup_upc(code) for code in upc_codes))
+        filtered_parts = [part for part in parts if part]
 
-        await message.reply("\n\n".join(parts))
+        if not filtered_parts:
+            await message.reply("Плейлисты не найдены для переданных UPC.")
+            return
+
+        await message.reply("\n\n".join(filtered_parts))
 
     async def close(self) -> None:
         if self.session and not self.session.closed:
