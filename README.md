@@ -6,12 +6,12 @@
 
 ## Требования
 - Python 3.11+
-- Установленные пакеты: `requests`, `beautifulsoup4`, `aiogram==2.5`
+- Установленные пакеты: `requests`, `beautifulsoup4`, `aiohttp`, `aiogram==2.5`
 
 Установите зависимости:
 
 ```bash
-pip install requests beautifulsoup4 aiogram==2.5
+pip install requests beautifulsoup4 aiohttp aiogram==2.5
 ```
 
 ## PKCE-скрипт (одноразовый запуск)

@@ -19,7 +19,7 @@ import logging
 import os
 from typing import Iterable, List
 
-import requests
+import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 
@@ -46,9 +46,17 @@ class BotService:
     def __init__(self, bot: Bot, token_manager: TokenManager) -> None:
         self.bot = bot
         self.token_manager = token_manager
+        self.session: aiohttp.ClientSession | None = None
 
-    def _build_headers(self) -> dict[str, str]:
-        access_token = self.token_manager.get_access_token()
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self.session is None or self.session.closed:
+            timeout = aiohttp.ClientTimeout(total=30)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+            logger.info("Created aiohttp session")
+        return self.session
+
+    async def _get_headers(self) -> dict[str, str]:
+        access_token = await asyncio.to_thread(self.token_manager.get_access_token)
         return {"Authorization": f"Bearer {access_token}"}
 
     def _extract_release_title(self, album: dict) -> str:
@@ -60,21 +68,81 @@ class BotService:
             or "Релиз"
         )
 
-    def lookup_upc(self, upc: str) -> str:
-        logger.info("Processing UPC %s", upc)
-        headers = self._build_headers()
+    def _release_matches(self, result: dict, release_title: str) -> bool:
+        normalized_release = (release_title or "").casefold()
+        track_name = (result.get("track_name") or "").casefold()
+        album_name = (result.get("album_name") or "").casefold()
+        return normalized_release in track_name or normalized_release in album_name
 
-        album_response = requests.get(ALBUM_ENDPOINT, params={"search": upc}, headers=headers, timeout=20)
-        if album_response.status_code != 200:
+    async def _fetch_playlists(
+        self,
+        session: aiohttp.ClientSession,
+        headers: dict[str, str],
+        platform_key: str,
+        platform_label: str,
+        artist_name: str,
+        release_title: str,
+        playlist_date: str,
+    ) -> List[str]:
+        params = {
+            "platform": platform_key,
+            "date": playlist_date,
+            "limit": 50,
+            "offset": 0,
+            "q": artist_name,
+        }
+        logger.debug("Requesting playlists on %s for %s", platform_key, artist_name)
+        try:
+            response = await session.get(PLAYLIST_ENDPOINT, params=params, headers=headers)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Playlist request error on %s: %s", platform_key, exc)
+            return []
+
+        if response.status != 200:
+            logger.warning("Playlist request failed for %s: %s", platform_key, response.status)
+            return []
+
+        payload = await response.json()
+        results = payload.get("results", [])
+        logger.info("%s playlists found for %s on %s", len(results), artist_name, platform_key)
+
+        playlist_lines: List[str] = []
+        for result in results:
+            playlist_name = result.get("playlist_name")
+            if not playlist_name:
+                continue
+            if not self._release_matches(result, release_title):
+                logger.debug("Skipping playlist %s on %s: release mismatch", playlist_name, platform_key)
+                continue
+            position = result.get("position")
+            note = f"(позиция {position})" if position is not None else "(Плейлист подборка)"
+            playlist_lines.append(f"«{playlist_name}» ({platform_label}) {note}")
+
+        return playlist_lines
+
+    async def lookup_upc(self, upc: str) -> str:
+        logger.info("Processing UPC %s", upc)
+        headers = await self._get_headers()
+        session = await self._get_session()
+
+        try:
+            album_response = await session.get(
+                ALBUM_ENDPOINT, params={"search": upc}, headers=headers, timeout=aiohttp.ClientTimeout(total=20)
+            )
+        except Exception as exc:  # pragma: no cover - network defensive
+            logger.error("Album request error for %s: %s", upc, exc)
+            return f"{upc}: ошибка при получении данных альбома"
+        if album_response.status != 200:
+            text = await album_response.text()
             logger.error(
                 "Album request failed for %s with status %s: %s",
                 upc,
-                album_response.status_code,
-                album_response.text,
+                album_response.status,
+                text,
             )
             return f"{upc}: ошибка при получении данных альбома"
 
-        album_data = album_response.json()
+        album_data = await album_response.json()
         albums = album_data.get("albums", [])
         if not albums:
             return f"{upc}: альбом не найден"
@@ -88,28 +156,13 @@ class BotService:
         playlist_date = dt.date.today().isoformat()
         playlist_lines: List[str] = []
 
-        for platform_key, platform_label in PLAYLIST_PLATFORMS.items():
-            params = {
-                "platform": platform_key,
-                "date": playlist_date,
-                "limit": 50,
-                "offset": 0,
-                "q": artist_name,
-            }
-            logger.debug("Requesting playlists on %s for %s", platform_key, artist_name)
-            response = requests.get(PLAYLIST_ENDPOINT, params=params, headers=headers, timeout=20)
-            if response.status_code != 200:
-                logger.warning("Playlist request failed for %s: %s", platform_key, response.status_code)
-                continue
+        tasks = [
+            self._fetch_playlists(session, headers, platform_key, platform_label, artist_name, release_title, playlist_date)
+            for platform_key, platform_label in PLAYLIST_PLATFORMS.items()
+        ]
 
-            payload = response.json()
-            results = payload.get("results", [])
-            logger.info("%s playlists found for %s on %s", len(results), artist_name, platform_key)
-            for result in results:
-                playlist_name = result.get("playlist_name")
-                if not playlist_name:
-                    continue
-                playlist_lines.append(f"«{playlist_name}» ({platform_label})")
+        for task_result in await asyncio.gather(*tasks):
+            playlist_lines.extend(task_result)
 
         if not playlist_lines:
             logger.info("No playlists found for %s", artist_name)
@@ -125,13 +178,14 @@ class BotService:
             return
 
         await self.bot.send_chat_action(message.chat.id, types.ChatActions.TYPING)
-        loop = asyncio.get_event_loop()
-        parts = []
-        for code in upc_codes:
-            result = await loop.run_in_executor(None, self.lookup_upc, code)
-            parts.append(result)
+        parts = await asyncio.gather(*(self.lookup_upc(code) for code in upc_codes))
 
         await message.reply("\n\n".join(parts))
+
+    async def close(self) -> None:
+        if self.session and not self.session.closed:
+            await self.session.close()
+            logger.info("aiohttp session closed")
 
 
 def _extract_upc_codes(text: str) -> Iterable[str]:
@@ -159,7 +213,12 @@ def main() -> None:
     dp = Dispatcher(bot)
     dp.register_message_handler(service.handle_message)
 
-    executor.start_polling(dp, skip_updates=True)
+    async def _on_shutdown(dispatcher: Dispatcher) -> None:  # pragma: no cover - invoked by aiogram loop
+        await service.close()
+        await dispatcher.storage.close()
+        await dispatcher.storage.wait_closed()
+
+    executor.start_polling(dp, skip_updates=True, on_shutdown=_on_shutdown)
 
 
 if __name__ == "__main__":
