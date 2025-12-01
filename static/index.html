@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Добавление UPC | Zvonkodigital</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Плейлист-чекер</h1>
+      <nav>
+        <a href="/static/index.html" class="active">Добавить UPC</a>
+        <a href="/static/releases.html">Релизы</a>
+      </nav>
+    </header>
+
+    <div class="container">
+      <div class="card">
+        <h2>Добавьте UPC коды</h2>
+        <p class="muted">Коды можно вводить через пробел или с новой строки. Проверка стартует сразу.</p>
+        <div class="input-area">
+          <textarea id="upcInput" placeholder="Например: 5063857155342 5063857157063"></textarea>
+        </div>
+        <div style="margin-top: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <button id="submitBtn">Добавить и проверить</button>
+          <span id="status" class="muted"></span>
+        </div>
+      </div>
+
+      <div style="height: 24px"></div>
+
+      <div class="grid" id="results"></div>
+    </div>
+
+    <script src="/static/index.js"></script>
+  </body>
+</html>
